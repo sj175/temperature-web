@@ -11,12 +11,13 @@ from fastapi.staticfiles import StaticFiles
 load_dotenv()
 ACCESS_KEY = os.getenv('ACCESS_KEY')
 SECRET_KEY = os.getenv('SECRET_KEY')
+BUCKETNAME = os.getenv('BUCKET')
 app = FastAPI()
 CLIENT = boto3.resource('s3',
                         aws_access_key_id=ACCESS_KEY,
                         aws_secret_access_key=SECRET_KEY,
                         )
-BUCKET = CLIENT.Bucket('prod-238783079787-temperature-data')
+BUCKET = CLIENT.Bucket(BUCKETNAME)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
