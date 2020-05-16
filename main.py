@@ -1,17 +1,23 @@
 import datetime
+import logging
 import os
 from typing import List
 
 import boto3
 import pydantic
+import starlette.responses
+import starlette.status
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Security, HTTPException, status, Depends
+from fastapi.security.api_key import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
 
 load_dotenv()
 ACCESS_KEY = os.getenv('ACCESS_KEY')
 SECRET_KEY = os.getenv('SECRET_KEY')
 BUCKETNAME = os.getenv('BUCKET')
+API_KEY = os.getenv('API_KEY')
+API_KEY_NAME = 'access_token'
 app = FastAPI()
 CLIENT = boto3.resource('s3',
                         aws_access_key_id=ACCESS_KEY,
@@ -19,63 +25,38 @@ CLIENT = boto3.resource('s3',
                         )
 BUCKET = CLIENT.Bucket(BUCKETNAME)
 app.mount("/static", StaticFiles(directory="static"), name="static")
+LOGGER = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 
-class TempData(pydantic.BaseModel):
+class TemperatureData(pydantic.BaseModel):
     timestamp: datetime.datetime
     temperature: float
     humidity: float
 
 
-DATA_SCRAG: List[TempData] = []
+GLOBAL_DATA: List[TemperatureData] = []
+api_key_header = APIKeyHeader(name=API_KEY_NAME)
 
 
-@app.get("/scrag")
-async def scragging():
-    global DATA_SCRAG
-    DATA_SCRAG = scraggin()
-    return {"status": DATA_SCRAG}
+async def get_api_key(header: str = Security(api_key_header)):
+    if header == API_KEY:
+        return header
+    else:
+        raise HTTPException(status_code=starlette.status.HTTP_403_FORBIDDEN, detail='Could not validate credentials')
 
 
-@app.get("/data")
-async def data(start_time: datetime.datetime, end_time: int):
-    return {"start": start_time, "end": end_time, "scrag": datetime.datetime.utcnow()}
+@app.get("/get-temperature")
+async def get_temperature():
+    return [[datum.timestamp, datum.temperature] for datum in GLOBAL_DATA]
 
 
-@app.get("/static-data")
-async def some_static_data():
-    return [["2020-05-10T14:06:06.900Z", 34.5], ["2020-05-10T14:06:07.900Z", 24.7], ["2020-05-10T14:06:08.900Z", 27.5]]
+@app.get("/get-humidity")
+async def get_humidity():
+    return [[datum.timestamp, datum.humidity] for datum in GLOBAL_DATA]
 
 
-@app.get("/current")
-async def current_data(shizzle: TempData):
-    pass
-
-
-@app.get("/get-temp")
-async def get_data():
-    return [[datum.timestamp, datum.temperature] for datum in DATA_SCRAG]
-
-
-@app.post("/update")
-async def update(shizzle: List[TempData]):
-    print(shizzle)
-    DATA_SCRAG.extend(shizzle)
-    return {"lol": 5}
-
-
-def scraggin():
-    output = []
-    for obj in BUCKET.objects.all():
-        key = obj.key
-        body = obj.get()['Body'].read()
-        output.append(body)
-        print(body)
-
-    return output
-
-
-def get_data(start: datetime.datetime, end: datetime) -> list:
-    # binary_search?
-    print(start, end)
-    return DATA_SCRAG
+@app.post("/update", status_code=status.HTTP_204_NO_CONTENT, response_class=starlette.responses.Response)
+async def update(received: List[TemperatureData], token: str = Depends(get_api_key)):
+    LOGGER.debug(received)
+    GLOBAL_DATA.extend(received)
