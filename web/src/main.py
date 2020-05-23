@@ -64,10 +64,12 @@ async def update(received: List[TemperatureData], token: str = Depends(get_api_k
     GLOBAL_DATA.extend(received)
 
 
-@fastapi_utils.tasks.repeat_every(seconds=3600)
+@app.on_event('startup')
+@fastapi_utils.tasks.repeat_every(seconds=3600, logger=LOGGER)
 def upload_to_s3() -> None:
-    upload_data = S3.Object(BUCKETNAME, 'key')
-    upload_data.put(Body=json
-                    .dumps(copy.deepcopy(GLOBAL_DATA))
-                    .encode('utf-8')
-                    )
+    if GLOBAL_DATA:
+        upload_data = S3.Object(BUCKETNAME, 'key')
+        upload_data.put(Body=json
+                        .dumps(copy.deepcopy(GLOBAL_DATA))
+                        .encode('utf-8')
+                        )
