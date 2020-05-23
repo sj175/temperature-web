@@ -1,9 +1,12 @@
+import copy
 import datetime
+import json
 import logging
 import os
 from typing import List
 
 import boto3
+import fastapi_utils.tasks
 import pydantic
 import starlette.responses
 import starlette.status
@@ -19,11 +22,10 @@ BUCKETNAME = os.getenv('BUCKET')
 API_KEY = os.getenv('API_KEY')
 API_KEY_NAME = 'access_token'
 app = FastAPI()
-CLIENT = boto3.resource('s3',
-                        aws_access_key_id=ACCESS_KEY,
-                        aws_secret_access_key=SECRET_KEY,
-                        )
-BUCKET = CLIENT.Bucket(BUCKETNAME)
+S3 = boto3.resource('s3',
+                    aws_access_key_id=ACCESS_KEY,
+                    aws_secret_access_key=SECRET_KEY,
+                    )
 app.mount("/static", StaticFiles(directory="static"), name="static")
 LOGGER = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -60,3 +62,12 @@ async def get_humidity():
 async def update(received: List[TemperatureData], token: str = Depends(get_api_key)):
     LOGGER.debug(received)
     GLOBAL_DATA.extend(received)
+
+
+@fastapi_utils.tasks.repeat_every(seconds=3600)
+def upload_to_s3() -> None:
+    upload_data = S3.Object(BUCKETNAME, 'key')
+    upload_data.put(Body=json
+                    .dumps(copy.deepcopy(GLOBAL_DATA))
+                    .encode('utf-8')
+                    )
