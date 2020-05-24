@@ -10,6 +10,7 @@ import fastapi_utils.tasks
 import pydantic
 import starlette.responses
 import starlette.status
+import threading
 from dotenv import load_dotenv
 from fastapi import FastAPI, Security, HTTPException, status, Depends
 from fastapi.security.api_key import APIKeyHeader
@@ -38,6 +39,7 @@ class TemperatureData(pydantic.BaseModel):
 
 
 GLOBAL_DATA: List[TemperatureData] = []
+data_lock = threading.Lock()
 api_key_header = APIKeyHeader(name=API_KEY_NAME)
 
 
@@ -50,26 +52,34 @@ async def get_api_key(header: str = Security(api_key_header)):
 
 @app.get("/get-temperature")
 async def get_temperature():
-    return [[datum.timestamp, datum.temperature] for datum in GLOBAL_DATA]
+    with data_lock:
+        return [[datum.timestamp, datum.temperature] for datum in GLOBAL_DATA]
 
 
 @app.get("/get-humidity")
 async def get_humidity():
-    return [[datum.timestamp, datum.humidity] for datum in GLOBAL_DATA]
+    with data_lock:
+        return [[datum.timestamp, datum.humidity] for datum in GLOBAL_DATA]
 
 
 @app.post("/update", status_code=status.HTTP_204_NO_CONTENT, response_class=starlette.responses.Response)
 async def update(received: List[TemperatureData], token: str = Depends(get_api_key)):
-    LOGGER.debug(received)
-    GLOBAL_DATA.extend(received)
+    with data_lock:
+        LOGGER.debug(received)
+        GLOBAL_DATA.extend(received)
 
 
 @app.on_event('startup')
 @fastapi_utils.tasks.repeat_every(seconds=3600, logger=LOGGER)
 def upload_to_s3() -> None:
-    if GLOBAL_DATA:
-        upload_data = S3.Object(BUCKETNAME, 'key')
-        upload_data.put(Body=json
-                        .dumps(copy.deepcopy(GLOBAL_DATA))
-                        .encode('utf-8')
-                        )
+    global GLOBAL_DATA
+    with data_lock:
+        if GLOBAL_DATA:
+            key = str(datetime.datetime.utcnow().replace(microsecond=0)).split(" ")
+            upload_data = S3.Object(BUCKETNAME, f"{key[0]}/{key[1].replace(':', '-')}")
+            upload_data.put(Body=json
+                            .dumps(copy.deepcopy(GLOBAL_DATA))
+                            .encode('utf-8')
+                            )
+
+        GLOBAL_DATA = []
