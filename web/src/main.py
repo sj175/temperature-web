@@ -38,6 +38,17 @@ class TemperatureData(pydantic.BaseModel):
     humidity: float
 
 
+class TemperatureDateEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, datetime.datetime):
+            return o.isoformat()
+
+        elif isinstance(o, TemperatureData):
+            return o.__dict__
+
+        return json.JSONEncoder.default(self, o)
+
+
 GLOBAL_DATA: List[TemperatureData] = []
 data_lock = threading.Lock()
 api_key_header = APIKeyHeader(name=API_KEY_NAME)
@@ -70,15 +81,19 @@ async def update(received: List[TemperatureData], token: str = Depends(get_api_k
 
 
 @app.on_event('startup')
-@fastapi_utils.tasks.repeat_every(seconds=3600, logger=LOGGER)
+@fastapi_utils.tasks.repeat_every(seconds=30, logger=LOGGER)
 def upload_to_s3() -> None:
     global GLOBAL_DATA
     with data_lock:
         if GLOBAL_DATA:
-            key = str(datetime.datetime.utcnow().replace(microsecond=0)).split(" ")
+            key = datetime.datetime \
+                .utcnow() \
+                .replace(microsecond=0) \
+                .isoformat() \
+                .split("T")
             upload_data = S3.Object(BUCKETNAME, f"{key[0]}/{key[1].replace(':', '-')}")
             upload_data.put(Body=json
-                            .dumps(copy.deepcopy(GLOBAL_DATA))
+                            .dumps(copy.deepcopy(GLOBAL_DATA), cls=TemperatureDateEncoder)
                             .encode('utf-8')
                             )
 
