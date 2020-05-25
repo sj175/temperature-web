@@ -27,7 +27,7 @@ S3 = boto3.resource('s3',
                     aws_access_key_id=ACCESS_KEY,
                     aws_secret_access_key=SECRET_KEY,
                     )
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# app.mount("/static", StaticFiles(directory="../static"), name="static") # for testing locally
 LOGGER = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
