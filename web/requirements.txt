@@ -1,4 +1,4 @@
-FastAPI==0.54.1
+FastAPI==0.65.2
 boto3==1.13.11
 python-dotenv==0.13.0
 fastapi-utils==0.2.1
